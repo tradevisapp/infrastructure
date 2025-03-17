@@ -46,11 +46,24 @@ jobs:
     - name: Create S3 bucket for Terraform state
       if: steps.check_s3.outputs.s3_exists == 'false'
       run: |
-        aws s3api create-bucket \
-          --bucket tradevis-terraform-state \
-          --region ${{ vars.AWS_REGION || 'us-east-1' }} \
-          ${{ vars.AWS_REGION == 'us-east-1' && '' || format('--create-bucket-configuration LocationConstraint={0}', vars.AWS_REGION || 'us-east-1') }}
+        # Get the current region
+        REGION="${{ vars.AWS_REGION || 'us-east-1' }}"
         
+        # Create bucket with different commands based on region
+        if [ "$REGION" = "us-east-1" ]; then
+          # For us-east-1, no LocationConstraint is needed
+          aws s3api create-bucket \
+            --bucket tradevis-terraform-state \
+            --region us-east-1
+        else
+          # For other regions, specify LocationConstraint
+          aws s3api create-bucket \
+            --bucket tradevis-terraform-state \
+            --region $REGION \
+            --create-bucket-configuration LocationConstraint=$REGION
+        fi
+        
+        # Configure bucket properties
         aws s3api put-bucket-versioning \
           --bucket tradevis-terraform-state \
           --versioning-configuration Status=Enabled
