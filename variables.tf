@@ -32,4 +32,10 @@ variable "key_name" {
   description = "Name of the SSH key pair to use for EC2 instance"
   type        = string
   default     = null
+}
+
+variable "dockerhub_username" {
+  description = "DockerHub username for pulling the frontend image"
+  type        = string
+  default     = "tradevis"  # Default value, can be overridden
 } 

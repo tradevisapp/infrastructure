@@ -156,9 +156,9 @@ resource "aws_instance" "app_server" {
               version: '3.8'
               
               services:
-                hello-world:
-                  image: nginxdemos/hello:latest
-                  container_name: hello-world
+                frontend:
+                  image: \${DOCKERHUB_USERNAME}/tradevis-frontend:latest
+                  container_name: tradevis-frontend
                   restart: unless-stopped
                   ports:
                     - "80:80"
@@ -173,8 +173,16 @@ resource "aws_instance" "app_server" {
               # Set proper ownership
               chown ec2-user:ec2-user /home/ec2-user/docker-compose.yml
               
+              # Create .env file with DockerHub credentials
+              cat > /home/ec2-user/.env <<ENVFILE
+              DOCKERHUB_USERNAME=${var.dockerhub_username}
+              ENVFILE
+              
+              # Set proper ownership
+              chown ec2-user:ec2-user /home/ec2-user/.env
+              
               # Start the container
               cd /home/ec2-user
-              docker-compose up -d
+              docker-compose --env-file .env up -d
               EOF
 } 
