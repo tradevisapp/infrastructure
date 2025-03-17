@@ -32,17 +32,4 @@ variable "key_name" {
   description = "Name of the SSH key pair to use for EC2 instance"
   type        = string
   default     = null
-}
-
-variable "dockerhub_username" {
-  description = "DockerHub username for pulling the frontend image"
-  type        = string
-  default     = "roeilevinson"
-}
-
-variable "webhook_secret" {
-  description = "Secret for the DockerHub webhook"
-  type        = string
-  default     = "your-webhook-secret"
-  sensitive   = true
 } 

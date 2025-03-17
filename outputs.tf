@@ -26,9 +26,4 @@ output "instance_public_ip" {
 output "ssh_command" {
   description = "SSH command to connect to the EC2 instance"
   value       = var.key_name != null ? "ssh -i ${var.key_name}.pem ec2-user@${aws_instance.app_server.public_ip}" : "No SSH key provided. Instance can only be accessed through the AWS console or by creating a new key pair."
-}
-
-output "webhook_url" {
-  description = "URL for the DockerHub webhook"
-  value       = "http://${aws_instance.app_server.public_ip}:9000/webhook"
 } 
