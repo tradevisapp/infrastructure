@@ -217,6 +217,16 @@ resource "aws_instance" "app_server" {
               # Wait for cluster to be ready before proceeding
               su - ec2-user -c "kubectl wait --for=condition=ready node --all --timeout=300s"
               
+              # Configure kubectl for ec2-user
+              mkdir -p /home/ec2-user/.kube
+              su - ec2-user -c "kind get kubeconfig > /home/ec2-user/.kube/config"
+              chown -R ec2-user:ec2-user /home/ec2-user/.kube
+              
+              # Create a kubectl alias for root user
+              mkdir -p /root/.kube
+              kind get kubeconfig > /root/.kube/config
+              echo 'export KUBECONFIG=/root/.kube/config' >> /root/.bashrc
+              
               # Create Kubernetes deployment manifest
               cat > /home/ec2-user/deployment.yaml <<DEPLOYMENT
               apiVersion: apps/v1
@@ -303,8 +313,49 @@ resource "aws_instance" "app_server" {
               chown ec2-user:ec2-user /home/ec2-user/kind-config.yaml
               chown ec2-user:ec2-user /home/ec2-user/deployment.yaml
               
-              # Add kubectl to ec2-user's PATH
+              # Add kubectl to ec2-user's PATH and set KUBECONFIG
               echo 'export PATH=$PATH:/usr/local/bin' >> /home/ec2-user/.bashrc
+              echo 'export KUBECONFIG=/home/ec2-user/.kube/config' >> /home/ec2-user/.bashrc
+              
+              # Create a welcome script
+              cat > /home/ec2-user/welcome.sh <<WELCOME
+              #!/bin/bash
+              
+              echo "===== Welcome to TradeVis Kubernetes Cluster ====="
+              echo ""
+              echo "Your Kind Kubernetes cluster should be running."
+              echo ""
+              echo "If you're experiencing connection issues with the Kubernetes API server,"
+              echo "try the following steps:"
+              echo ""
+              echo "1. Ensure KUBECONFIG is set correctly:"
+              echo "   export KUBECONFIG=\$HOME/.kube/config"
+              echo ""
+              echo "2. Verify the cluster is running:"
+              echo "   kind get clusters"
+              echo ""
+              echo "3. Check if the API server is accessible:"
+              echo "   kubectl cluster-info"
+              echo ""
+              echo "4. If you're still having issues, run the troubleshooting script:"
+              echo "   ./troubleshoot.sh"
+              echo ""
+              echo "5. To fix common node issues:"
+              echo "   ./fix-nodes.sh"
+              echo ""
+              echo "6. To check the status of your application:"
+              echo "   kubectl get pods"
+              echo "   kubectl get services"
+              echo ""
+              echo "Your application should be accessible at: http://$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4)"
+              echo ""
+              WELCOME
+              
+              chmod +x /home/ec2-user/welcome.sh
+              chown ec2-user:ec2-user /home/ec2-user/welcome.sh
+              
+              # Add welcome script to .bashrc
+              echo './welcome.sh' >> /home/ec2-user/.bashrc
               
               # Create a troubleshooting script
               cat > /home/ec2-user/troubleshoot.sh <<TROUBLESHOOT
@@ -368,10 +419,35 @@ resource "aws_instance" "app_server" {
               cat > /home/ec2-user/fix-nodes.sh <<FIXSCRIPT
               #!/bin/bash
               
+              echo "===== FIXING KUBERNETES CLUSTER ISSUES ====="
+              
+              # Fix kubectl configuration
+              echo "Fixing kubectl configuration..."
+              mkdir -p \$HOME/.kube
+              kind get kubeconfig > \$HOME/.kube/config
+              export KUBECONFIG=\$HOME/.kube/config
+              
+              # Check if API server is accessible
+              echo "Checking API server connection..."
+              if ! kubectl cluster-info; then
+                echo "API server not accessible. Attempting to fix..."
+                
+                # Check if Kind cluster is running
+                if ! kind get clusters | grep -q kind; then
+                  echo "Kind cluster not found. Creating a new one..."
+                  kind create cluster --config=/home/ec2-user/kind-config.yaml
+                else
+                  echo "Kind cluster exists. Trying to reconnect..."
+                  kind export kubeconfig
+                fi
+              fi
+              
               # Remove taints from all nodes
+              echo "Removing taints from nodes..."
               kubectl taint nodes --all node-role.kubernetes.io/control-plane- node-role.kubernetes.io/master- node.kubernetes.io/not-ready- --overwrite
               
               # Label worker nodes
+              echo "Labeling worker nodes..."
               kubectl label node kind-worker node-role.kubernetes.io/worker=worker --overwrite
               kubectl label node kind-worker2 node-role.kubernetes.io/worker=worker --overwrite
               
@@ -398,6 +474,9 @@ resource "aws_instance" "app_server" {
               # Show where pods are scheduled
               echo "Pod scheduling:"
               kubectl get pods -o wide
+              
+              echo "===== FIX COMPLETE ====="
+              echo "If you're still experiencing issues, try running ./troubleshoot.sh"
               FIXSCRIPT
               
               chmod +x /home/ec2-user/fix-nodes.sh
@@ -405,5 +484,118 @@ resource "aws_instance" "app_server" {
               
               # Run the fix script
               su - ec2-user -c "/home/ec2-user/fix-nodes.sh"
+              
+              # Create a restart cluster script
+              cat > /home/ec2-user/restart-cluster.sh <<RESTART
+              #!/bin/bash
+              
+              echo "===== RESTARTING KIND KUBERNETES CLUSTER ====="
+              
+              # Delete existing cluster if it exists
+              if kind get clusters | grep -q kind; then
+                echo "Deleting existing Kind cluster..."
+                kind delete cluster
+              fi
+              
+              # Create new cluster
+              echo "Creating new Kind cluster..."
+              kind create cluster --config=/home/ec2-user/kind-config.yaml
+              
+              # Configure kubectl
+              echo "Configuring kubectl..."
+              mkdir -p \$HOME/.kube
+              kind get kubeconfig > \$HOME/.kube/config
+              export KUBECONFIG=\$HOME/.kube/config
+              
+              # Wait for nodes to be ready
+              echo "Waiting for nodes to be ready..."
+              kubectl wait --for=condition=ready node --all --timeout=300s
+              
+              # Pull and load the image
+              echo "Loading image into cluster..."
+              docker pull roeilevinson/tradevis-frontend:latest
+              kind load docker-image roeilevinson/tradevis-frontend:latest
+              
+              # Apply deployment
+              echo "Applying deployment..."
+              kubectl apply -f /home/ec2-user/deployment.yaml
+              
+              # Install Ingress controller
+              echo "Installing Ingress controller..."
+              kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
+              
+              # Wait for Ingress controller to be ready
+              echo "Waiting for Ingress controller to be ready..."
+              kubectl wait --namespace ingress-nginx --for=condition=ready pod --selector=app.kubernetes.io/component=controller --timeout=90s || true
+              
+              # Run fix script
+              echo "Running fix script..."
+              ./fix-nodes.sh
+              
+              echo "===== CLUSTER RESTART COMPLETE ====="
+              echo "Check cluster status with: kubectl get nodes"
+              echo "Check pod status with: kubectl get pods -A"
+              RESTART
+              
+              chmod +x /home/ec2-user/restart-cluster.sh
+              chown ec2-user:ec2-user /home/ec2-user/restart-cluster.sh
+              
+              # Create a troubleshooting script
+              cat > /home/ec2-user/troubleshoot.sh <<TROUBLESHOOT
+              #!/bin/bash
+              
+              echo "===== CLUSTER DIAGNOSTICS ====="
+              
+              echo "1. Node Status:"
+              kubectl get nodes -o wide
+              
+              echo "2. Pod Status:"
+              kubectl get pods -A -o wide
+              
+              echo "3. Describe Nodes:"
+              kubectl describe nodes
+              
+              echo "4. Describe Pods:"
+              kubectl describe pods
+              
+              echo "5. Checking for taints:"
+              kubectl get nodes -o=custom-columns=NAME:.metadata.name,TAINTS:.spec.taints
+              
+              echo "6. Checking system pods:"
+              kubectl get pods -n kube-system
+              
+              echo "7. Checking logs for unschedulable pods:"
+              kubectl get events | grep -i "pod" | grep -i "fail"
+              
+              echo "8. Checking Docker status:"
+              systemctl status docker
+              
+              echo "9. Checking Kind containers:"
+              docker ps
+              
+              echo "10. Checking available resources:"
+              kubectl describe nodes | grep -A 5 "Allocated resources"
+              
+              echo "===== ATTEMPTING FIXES ====="
+              
+              echo "1. Removing all taints from nodes:"
+              kubectl taint nodes --all node-role.kubernetes.io/control-plane- node-role.kubernetes.io/master- node.kubernetes.io/not-ready- --overwrite
+              
+              echo "2. Ensuring worker nodes are labeled correctly:"
+              kubectl label node kind-worker node-role.kubernetes.io/worker=worker --overwrite
+              kubectl label node kind-worker2 node-role.kubernetes.io/worker=worker --overwrite
+              
+              echo "3. Restarting deployment:"
+              kubectl rollout restart deployment tradevis-frontend
+              
+              echo "4. Waiting for deployment to be ready:"
+              kubectl rollout status deployment/tradevis-frontend --timeout=300s
+              
+              echo "5. Final pod status:"
+              kubectl get pods -o wide
+              TROUBLESHOOT
+              
+              chmod +x /home/ec2-user/troubleshoot.sh
+              chown ec2-user:ec2-user /home/ec2-user/troubleshoot.sh
               EOF
 } 
