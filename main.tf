@@ -3,6 +3,17 @@ provider "aws" {
 }
 
 terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 4.0"
+    }
+    template = {
+      source  = "hashicorp/template"
+      version = "~> 2.2"
+    }
+  }
+  
   backend "s3" {
     bucket         = "tradevis-terraform-state"
     key            = "terraform.tfstate"
@@ -25,6 +36,15 @@ data "aws_ami" "amazon_linux_2" {
   filter {
     name   = "virtualization-type"
     values = ["hvm"]
+  }
+}
+
+# Template for docker-compose.yml
+data "template_file" "docker_compose" {
+  template = file("${path.module}/docker-compose.tpl")
+  
+  vars = {
+    dockerhub_username = var.dockerhub_username
   }
 }
 
@@ -193,19 +213,19 @@ resource "aws_instance" "app_server" {
                       
                       // Verify it's from DockerHub
                       if (payload.push_data && payload.repository) {
-                        console.log(`Received webhook for $${payload.repository.name}:$${payload.push_data.tag}`);
+                        console.log(\`Received webhook for \${payload.repository.name}:\${payload.push_data.tag}\`);
                         
                         // Pull the latest image and restart the container
                         exec('cd /home/ec2-user && docker-compose pull frontend && docker-compose up -d', 
                           (error, stdout, stderr) => {
                             if (error) {
-                              console.error(`Error: $${error.message}`);
+                              console.error(\`Error: \${error.message}\`);
                               return;
                             }
                             if (stderr) {
-                              console.error(`stderr: $${stderr}`);
+                              console.error(\`stderr: \${stderr}\`);
                             }
-                            console.log(`stdout: $${stdout}`);
+                            console.log(\`stdout: \${stdout}\`);
                             console.log('Container updated successfully');
                           }
                         );
@@ -229,7 +249,7 @@ resource "aws_instance" "app_server" {
               });
               
               server.listen(PORT, () => {
-                console.log(`Webhook server running on port $${PORT}`);
+                console.log(\`Webhook server running on port \${PORT}\`);
               });
               WEBHOOKSERVER
               
@@ -259,39 +279,12 @@ resource "aws_instance" "app_server" {
               systemctl start webhook.service
               
               # Create docker-compose.yml file
-              cat > /home/ec2-user/docker-compose.yml <<DOCKERCOMPOSE
-              version: '3.8'
-              
-              services:
-                hello-world:
-                  image: nginxdemos/hello:latest
-                  container_name: hello-world
-                  restart: unless-stopped
-                  ports:
-                    - "80:80"
-                  networks:
-                    - app-network
-                
-                frontend:
-                  image: \${DOCKERHUB_USERNAME}/tradevis-frontend:latest
-                  container_name: tradevis-frontend
-                  restart: unless-stopped
-                  ports:
-                    - "3000:80"
-                  networks:
-                    - app-network
-              
-              networks:
-                app-network:
-                  driver: bridge
+              cat > /home/ec2-user/docker-compose.yml <<'DOCKERCOMPOSE'
+              ${data.template_file.docker_compose.rendered}
               DOCKERCOMPOSE
               
               # Set proper ownership
               chown ec2-user:ec2-user /home/ec2-user/docker-compose.yml
-              
-              # Set environment variables for docker-compose
-              echo "DOCKERHUB_USERNAME=${var.dockerhub_username}" > /home/ec2-user/.env
-              chown ec2-user:ec2-user /home/ec2-user/.env
               
               # Start the container
               cd /home/ec2-user
