@@ -177,10 +177,4 @@ resource "aws_instance" "app_server" {
               cd /home/ec2-user
               docker-compose up -d
               EOF
-}
-
-# Output the public IP of the EC2 instance
-output "instance_public_ip" {
-  description = "Public IP address of the EC2 instance"
-  value       = aws_instance.app_server.public_ip
 } 
