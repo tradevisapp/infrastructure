@@ -8,6 +8,7 @@ This repository contains the infrastructure code for the TradeVis application, w
 - docker-compose.yml - Sample Docker Compose configuration for the application
 - .github/workflows/ - Contains CI/CD pipelines
   - terraform.yml - GitHub Actions workflow for Terraform deployment
+  - aws-nuke.yml - GitHub Actions workflow for complete AWS resource cleanup
 
 ## Infrastructure Components
 
@@ -24,6 +25,17 @@ The repository includes a GitHub Actions workflow that automatically:
 1. Validates Terraform code
 2. Plans infrastructure changes
 3. Applies changes when code is pushed to the main branch
+4. Can destroy the infrastructure when triggered manually
+
+### Using the GitHub Actions Workflow
+
+- **Apply**: The workflow automatically applies changes when you push to the main branch
+- **Destroy**: You can manually trigger the workflow to destroy the infrastructure:
+  1. Go to the "Actions" tab in your GitHub repository
+  2. Select the "Terraform CI/CD" workflow
+  3. Click "Run workflow"
+  4. Select "destroy" from the dropdown menu
+  5. Click "Run workflow"
 
 ## Prerequisites
 
@@ -87,11 +99,35 @@ To use the CI/CD pipeline, you need to set up the following GitHub secrets:
 
 - `AWS_ACCESS_KEY_ID` - AWS access key with permissions to create resources
 - `AWS_SECRET_ACCESS_KEY` - Corresponding AWS secret key
+- `AWS_ACCOUNT_ID` - Your AWS account ID (required for AWS Nuke)
 - `TF_API_TOKEN` - (Optional) Terraform Cloud API token if using Terraform Cloud
 
 ## Cleaning Up
 
-To destroy the infrastructure when no longer needed:
+### Using Terraform (Recommended for normal use)
+
+To destroy the infrastructure using GitHub Actions:
+1. Go to the "Actions" tab in your GitHub repository
+2. Select the "Terraform CI/CD" workflow
+3. Click "Run workflow"
+4. Select "destroy" from the dropdown menu
+5. Click "Run workflow"
+
+### Using AWS Nuke (For complete cleanup)
+
+If you need to completely clean up all AWS resources, including those that might not be managed by Terraform:
+
+1. Go to the "Actions" tab in your GitHub repository
+2. Select the "AWS Nuke - Resource Cleanup" workflow
+3. Click "Run workflow"
+4. Type "yes-delete-all" in the confirmation field
+5. Click "Run workflow"
+
+**Warning**: AWS Nuke will delete **ALL** resources specified in the configuration. Use with extreme caution and only in development/testing environments.
+
+### Using Terraform CLI
+
+To destroy the infrastructure using the Terraform CLI:
 
 ```
 terraform destroy

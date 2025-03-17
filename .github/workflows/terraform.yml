@@ -4,6 +4,16 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action to perform'
+        required: true
+        default: 'apply'
+        type: choice
+        options:
+          - apply
+          - destroy
 
 permissions:
   contents: read
@@ -19,7 +29,6 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v3
-
 
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v2
@@ -49,7 +58,18 @@ jobs:
 
     - name: Terraform Plan
       id: plan
+      if: github.event.inputs.action != 'destroy'
       run: terraform plan -no-color
 
     - name: Terraform Apply
-      run: terraform apply -auto-approve 
+      if: github.event.inputs.action != 'destroy'
+      run: terraform apply -auto-approve
+      
+    - name: Terraform Destroy Plan
+      id: destroy-plan
+      if: github.event.inputs.action == 'destroy'
+      run: terraform plan -destroy -no-color
+      
+    - name: Terraform Destroy
+      if: github.event.inputs.action == 'destroy'
+      run: terraform destroy -auto-approve 

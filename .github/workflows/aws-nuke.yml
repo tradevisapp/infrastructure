@@ -1,0 +1,77 @@
+name: 'AWS Nuke - Resource Cleanup'
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "yes-delete-all" to confirm deletion of all resources'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  aws-nuke:
+    name: 'AWS Nuke'
+    runs-on: ubuntu-latest
+    if: github.event.inputs.confirm == 'yes-delete-all'
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-east-1
+
+    - name: Create AWS Nuke config
+      run: |
+        cat > nuke-config.yml <<EOF
+        regions:
+        - us-east-1
+
+        account-blocklist:
+        - "999999999999" # Replace with any accounts you want to protect
+
+        resource-types:
+          targets:
+          - EC2Instance
+          - EC2SecurityGroup
+          - EC2Subnet
+          - EC2VPC
+          - EC2InternetGateway
+          - EC2RouteTable
+
+        accounts:
+          "${{ secrets.AWS_ACCOUNT_ID }}": # This should be set as a GitHub secret
+            filters:
+              IAMRole:
+              - type: glob
+                value: "AWSServiceRole*"
+              - type: glob
+                value: "aws-service-role*"
+              IAMRolePolicy:
+              - type: glob
+                value: "AWSServiceRole*"
+              - type: glob
+                value: "aws-service-role*"
+        EOF
+
+    - name: Download AWS Nuke
+      run: |
+        wget https://github.com/rebuy-de/aws-nuke/releases/download/v2.25.0/aws-nuke-v2.25.0-linux-amd64.tar.gz
+        tar -xzvf aws-nuke-v2.25.0-linux-amd64.tar.gz
+        chmod +x aws-nuke-v2.25.0-linux-amd64
+        mv aws-nuke-v2.25.0-linux-amd64 aws-nuke
+
+    - name: Run AWS Nuke (Dry Run)
+      run: |
+        ./aws-nuke -c nuke-config.yml --no-dry-run --force --quiet
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        AWS_REGION: us-east-1 
