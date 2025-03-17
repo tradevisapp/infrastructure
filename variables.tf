@@ -37,5 +37,5 @@ variable "key_name" {
 variable "dockerhub_username" {
   description = "DockerHub username for pulling the frontend image"
   type        = string
-  default     = "tradevis"  # Default value, can be overridden
+  default     = "roeilevinson"  # Default value, can be overridden
 } 
