@@ -18,19 +18,19 @@ const server = http.createServer((req, res) => {
         
         // Verify it's from DockerHub
         if (payload.push_data && payload.repository) {
-          console.log(`Received webhook for ${payload.repository.name}:${payload.push_data.tag}`);
+          console.log(`Received webhook for $${payload.repository.name}:$${payload.push_data.tag}`);
           
           // Pull the latest image and restart the container
           exec('cd /home/ec2-user && docker-compose pull frontend && docker-compose up -d', 
             (error, stdout, stderr) => {
               if (error) {
-                console.error(`Error: ${error.message}`);
+                console.error(`Error: $${error.message}`);
                 return;
               }
               if (stderr) {
-                console.error(`stderr: ${stderr}`);
+                console.error(`stderr: $${stderr}`);
               }
-              console.log(`stdout: ${stdout}`);
+              console.log(`stdout: $${stdout}`);
               console.log('Container updated successfully');
             }
           );
@@ -54,5 +54,5 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`Webhook server running on port ${PORT}`);
+  console.log(`Webhook server running on port $${PORT}`);
 }); 
