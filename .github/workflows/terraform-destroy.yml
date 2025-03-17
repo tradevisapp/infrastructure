@@ -1,26 +1,14 @@
-name: 'Terraform CI/CD'
+name: 'Terraform Destroy'
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
-    inputs:
-      action:
-        description: 'Action to perform'
-        required: true
-        default: 'apply'
-        type: choice
-        options:
-          - apply
-          - destroy
 
 permissions:
   contents: read
 
 jobs:
   terraform:
-    name: 'Terraform'
+    name: 'Terraform Destroy'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -41,35 +29,15 @@ jobs:
       with:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: us-east-1
-
-    - name: Terraform Format
-      id: fmt
-      run: terraform fmt -check
-      continue-on-error: true
+        aws-region: ${{ vars.AWS_REGION }}
 
     - name: Terraform Init
       id: init
       run: terraform init
 
-    - name: Terraform Validate
-      id: validate
-      run: terraform validate -no-color
-
-    - name: Terraform Plan
-      id: plan
-      if: github.event.inputs.action != 'destroy'
-      run: terraform plan -no-color
-
-    - name: Terraform Apply
-      if: github.event.inputs.action != 'destroy'
-      run: terraform apply -auto-approve
-      
     - name: Terraform Destroy Plan
       id: destroy-plan
-      if: github.event.inputs.action == 'destroy'
       run: terraform plan -destroy -no-color
       
     - name: Terraform Destroy
-      if: github.event.inputs.action == 'destroy'
       run: terraform destroy -auto-approve 

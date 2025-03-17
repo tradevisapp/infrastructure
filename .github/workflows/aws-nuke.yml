@@ -26,13 +26,13 @@ jobs:
       with:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: us-east-1
+        aws-region: ${{ vars.AWS_REGION }}
 
     - name: Create AWS Nuke config
       run: |
         cat > nuke-config.yml <<EOF
         regions:
-        - us-east-1
+        - ${{ vars.AWS_REGION }}
 
         account-blocklist:
         - "999999999999" # Replace with any accounts you want to protect
@@ -45,6 +45,10 @@ jobs:
           - EC2VPC
           - EC2InternetGateway
           - EC2RouteTable
+          - EC2DHCPOptions
+          - S3Bucket
+          - S3Object
+          - DynamoDBTable
 
         accounts:
           "${{ secrets.AWS_ACCOUNT_ID }}": # This should be set as a GitHub secret
@@ -59,6 +63,14 @@ jobs:
                 value: "AWSServiceRole*"
               - type: glob
                 value: "aws-service-role*"
+              S3Bucket:
+              - type: glob
+                value: "tradevis-terraform-state"
+                invert: false
+              DynamoDBTable:
+              - type: glob
+                value: "terraform-state-lock"
+                invert: false
         EOF
 
     - name: Download AWS Nuke
@@ -74,4 +86,4 @@ jobs:
       env:
         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        AWS_REGION: us-east-1 
+        AWS_REGION: ${{ vars.AWS_REGION }} 
