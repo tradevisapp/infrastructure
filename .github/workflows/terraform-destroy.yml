@@ -7,8 +7,14 @@ permissions:
   contents: read
 
 jobs:
+  setup_backend:
+    name: 'Setup Backend'
+    uses: ./.github/workflows/terraform-backend-setup.yml
+    secrets: inherit
+
   terraform:
     name: 'Terraform Destroy'
+    needs: setup_backend
     runs-on: ubuntu-latest
     defaults:
       run:
