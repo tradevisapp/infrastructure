@@ -48,6 +48,20 @@ data "template_file" "docker_compose" {
   }
 }
 
+# Template for webhook server
+data "template_file" "webhook_server" {
+  template = file("${path.module}/webhook-server.js.tpl")
+}
+
+# Template for webhook service
+data "template_file" "webhook_service" {
+  template = file("${path.module}/webhook.service.tpl")
+  
+  vars = {
+    webhook_secret = var.webhook_secret
+  }
+}
+
 # Create VPC
 resource "aws_vpc" "app_vpc" {
   cidr_block           = var.vpc_cidr
@@ -193,64 +207,7 @@ resource "aws_instance" "app_server" {
               
               # Create webhook server file
               cat > /home/ec2-user/webhook-server.js <<'WEBHOOKSERVER'
-              const http = require('http');
-              const { exec } = require('child_process');
-              
-              const PORT = 9000;
-              const SECRET = process.env.WEBHOOK_SECRET || 'your-webhook-secret';
-              
-              const server = http.createServer((req, res) => {
-                if (req.method === 'POST' && req.url === '/webhook') {
-                  let body = '';
-                  
-                  req.on('data', chunk => {
-                    body += chunk.toString();
-                  });
-                  
-                  req.on('end', () => {
-                    try {
-                      const payload = JSON.parse(body);
-                      
-                      // Verify it's from DockerHub
-                      if (payload.push_data && payload.repository) {
-                        console.log(\`Received webhook for \${payload.repository.name}:\${payload.push_data.tag}\`);
-                        
-                        // Pull the latest image and restart the container
-                        exec('cd /home/ec2-user && docker-compose pull frontend && docker-compose up -d', 
-                          (error, stdout, stderr) => {
-                            if (error) {
-                              console.error(\`Error: \${error.message}\`);
-                              return;
-                            }
-                            if (stderr) {
-                              console.error(\`stderr: \${stderr}\`);
-                            }
-                            console.log(\`stdout: \${stdout}\`);
-                            console.log('Container updated successfully');
-                          }
-                        );
-                        
-                        res.statusCode = 200;
-                        res.end('Webhook received and processing');
-                      } else {
-                        res.statusCode = 400;
-                        res.end('Invalid webhook payload');
-                      }
-                    } catch (error) {
-                      console.error('Error processing webhook:', error);
-                      res.statusCode = 400;
-                      res.end('Error processing webhook');
-                    }
-                  });
-                } else {
-                  res.statusCode = 404;
-                  res.end('Not found');
-                }
-              });
-              
-              server.listen(PORT, () => {
-                console.log(\`Webhook server running on port \${PORT}\`);
-              });
+              ${data.template_file.webhook_server.rendered}
               WEBHOOKSERVER
               
               # Set proper ownership
@@ -258,20 +215,7 @@ resource "aws_instance" "app_server" {
               
               # Create systemd service file for webhook server
               cat > /etc/systemd/system/webhook.service <<WEBHOOKSERVICE
-              [Unit]
-              Description=DockerHub Webhook Server
-              After=network.target
-              
-              [Service]
-              Environment=NODE_ENV=production
-              Environment=WEBHOOK_SECRET=${var.webhook_secret}
-              Type=simple
-              User=ec2-user
-              ExecStart=/usr/bin/node /home/ec2-user/webhook-server.js
-              Restart=on-failure
-              
-              [Install]
-              WantedBy=multi-user.target
+              ${data.template_file.webhook_service.rendered}
               WEBHOOKSERVICE
               
               # Enable and start webhook service
