@@ -193,19 +193,19 @@ resource "aws_instance" "app_server" {
                       
                       // Verify it's from DockerHub
                       if (payload.push_data && payload.repository) {
-                        console.log(`Received webhook for ${payload.repository.name}:${payload.push_data.tag}`);
+                        console.log(`Received webhook for $${payload.repository.name}:$${payload.push_data.tag}`);
                         
                         // Pull the latest image and restart the container
                         exec('cd /home/ec2-user && docker-compose pull frontend && docker-compose up -d', 
                           (error, stdout, stderr) => {
                             if (error) {
-                              console.error(`Error: ${error.message}`);
+                              console.error(`Error: $${error.message}`);
                               return;
                             }
                             if (stderr) {
-                              console.error(`stderr: ${stderr}`);
+                              console.error(`stderr: $${stderr}`);
                             }
-                            console.log(`stdout: ${stdout}`);
+                            console.log(`stdout: $${stdout}`);
                             console.log('Container updated successfully');
                           }
                         );
@@ -229,7 +229,7 @@ resource "aws_instance" "app_server" {
               });
               
               server.listen(PORT, () => {
-                console.log(`Webhook server running on port ${PORT}`);
+                console.log(`Webhook server running on port $${PORT}`);
               });
               WEBHOOKSERVER
               
@@ -237,7 +237,7 @@ resource "aws_instance" "app_server" {
               chown ec2-user:ec2-user /home/ec2-user/webhook-server.js
               
               # Create systemd service file for webhook server
-              cat > /etc/systemd/system/webhook.service <<'WEBHOOKSERVICE'
+              cat > /etc/systemd/system/webhook.service <<WEBHOOKSERVICE
               [Unit]
               Description=DockerHub Webhook Server
               After=network.target
@@ -259,7 +259,7 @@ resource "aws_instance" "app_server" {
               systemctl start webhook.service
               
               # Create docker-compose.yml file
-              cat > /home/ec2-user/docker-compose.yml <<'DOCKERCOMPOSE'
+              cat > /home/ec2-user/docker-compose.yml <<DOCKERCOMPOSE
               version: '3.8'
               
               services:
@@ -273,7 +273,7 @@ resource "aws_instance" "app_server" {
                     - app-network
                 
                 frontend:
-                  image: ${DOCKERHUB_USERNAME}/tradevis-frontend:latest
+                  image: \${DOCKERHUB_USERNAME}/tradevis-frontend:latest
                   container_name: tradevis-frontend
                   restart: unless-stopped
                   ports:
