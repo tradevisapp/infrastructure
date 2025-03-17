@@ -190,12 +190,32 @@ resource "aws_instance" "app_server" {
                 - containerPort: 80
                   hostPort: 80
                   protocol: TCP
+                kubeadmConfigPatches:
+                - |
+                  kind: InitConfiguration
+                  nodeRegistration:
+                    taints: []
               - role: worker
+                kubeadmConfigPatches:
+                - |
+                  kind: JoinConfiguration
+                  nodeRegistration:
+                    kubeletExtraArgs:
+                      node-labels: "node-role.kubernetes.io/worker=worker"
               - role: worker
+                kubeadmConfigPatches:
+                - |
+                  kind: JoinConfiguration
+                  nodeRegistration:
+                    kubeletExtraArgs:
+                      node-labels: "node-role.kubernetes.io/worker=worker"
               KINDCONFIG
               
               # Create the Kind cluster
               su - ec2-user -c "kind create cluster --config=/home/ec2-user/kind-config.yaml"
+              
+              # Wait for cluster to be ready before proceeding
+              su - ec2-user -c "kubectl wait --for=condition=ready node --all --timeout=300s"
               
               # Create Kubernetes deployment manifest
               cat > /home/ec2-user/deployment.yaml <<DEPLOYMENT
@@ -213,6 +233,22 @@ resource "aws_instance" "app_server" {
                     labels:
                       app: tradevis-frontend
                   spec:
+                    affinity:
+                      nodeAffinity:
+                        requiredDuringSchedulingIgnoredDuringExecution:
+                          nodeSelectorTerms:
+                          - matchExpressions:
+                            - key: kubernetes.io/hostname
+                              operator: NotIn
+                              values:
+                              - kind-control-plane
+                    tolerations:
+                    - key: "node-role.kubernetes.io/control-plane"
+                      operator: "Exists"
+                      effect: "NoSchedule"
+                    - key: "node.kubernetes.io/not-ready"
+                      operator: "Exists"
+                      effect: "NoSchedule"
                     containers:
                     - name: tradevis-frontend
                       image: $DOCKERHUB_USERNAME/tradevis-frontend:latest
@@ -253,6 +289,12 @@ resource "aws_instance" "app_server" {
               # Apply the Kubernetes manifests
               su - ec2-user -c "kubectl apply -f /home/ec2-user/deployment.yaml"
               
+              # Install Ingress controller
+              su - ec2-user -c "kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml"
+              
+              # Wait for Ingress controller to be ready
+              su - ec2-user -c "kubectl wait --namespace ingress-nginx --for=condition=ready pod --selector=app.kubernetes.io/component=controller --timeout=90s"
+              
               # Pull the image into the Kind cluster
               su - ec2-user -c "docker pull $DOCKERHUB_USERNAME/tradevis-frontend:latest"
               su - ec2-user -c "kind load docker-image $DOCKERHUB_USERNAME/tradevis-frontend:latest"
@@ -263,5 +305,105 @@ resource "aws_instance" "app_server" {
               
               # Add kubectl to ec2-user's PATH
               echo 'export PATH=$PATH:/usr/local/bin' >> /home/ec2-user/.bashrc
+              
+              # Create a troubleshooting script
+              cat > /home/ec2-user/troubleshoot.sh <<TROUBLESHOOT
+              #!/bin/bash
+              
+              echo "===== CLUSTER DIAGNOSTICS ====="
+              
+              echo "1. Node Status:"
+              kubectl get nodes -o wide
+              
+              echo "2. Pod Status:"
+              kubectl get pods -A -o wide
+              
+              echo "3. Describe Nodes:"
+              kubectl describe nodes
+              
+              echo "4. Describe Pods:"
+              kubectl describe pods
+              
+              echo "5. Checking for taints:"
+              kubectl get nodes -o=custom-columns=NAME:.metadata.name,TAINTS:.spec.taints
+              
+              echo "6. Checking system pods:"
+              kubectl get pods -n kube-system
+              
+              echo "7. Checking logs for unschedulable pods:"
+              kubectl get events | grep -i "pod" | grep -i "fail"
+              
+              echo "8. Checking Docker status:"
+              systemctl status docker
+              
+              echo "9. Checking Kind containers:"
+              docker ps
+              
+              echo "10. Checking available resources:"
+              kubectl describe nodes | grep -A 5 "Allocated resources"
+              
+              echo "===== ATTEMPTING FIXES ====="
+              
+              echo "1. Removing all taints from nodes:"
+              kubectl taint nodes --all node-role.kubernetes.io/control-plane- node-role.kubernetes.io/master- node.kubernetes.io/not-ready- --overwrite
+              
+              echo "2. Ensuring worker nodes are labeled correctly:"
+              kubectl label node kind-worker node-role.kubernetes.io/worker=worker --overwrite
+              kubectl label node kind-worker2 node-role.kubernetes.io/worker=worker --overwrite
+              
+              echo "3. Restarting deployment:"
+              kubectl rollout restart deployment tradevis-frontend
+              
+              echo "4. Waiting for deployment to be ready:"
+              kubectl rollout status deployment/tradevis-frontend --timeout=300s
+              
+              echo "5. Final pod status:"
+              kubectl get pods -o wide
+              TROUBLESHOOT
+              
+              chmod +x /home/ec2-user/troubleshoot.sh
+              chown ec2-user:ec2-user /home/ec2-user/troubleshoot.sh
+              
+              # Create a script to check and fix node issues
+              cat > /home/ec2-user/fix-nodes.sh <<FIXSCRIPT
+              #!/bin/bash
+              
+              # Remove taints from all nodes
+              kubectl taint nodes --all node-role.kubernetes.io/control-plane- node-role.kubernetes.io/master- node.kubernetes.io/not-ready- --overwrite
+              
+              # Label worker nodes
+              kubectl label node kind-worker node-role.kubernetes.io/worker=worker --overwrite
+              kubectl label node kind-worker2 node-role.kubernetes.io/worker=worker --overwrite
+              
+              # Wait for nodes to be ready
+              echo "Waiting for nodes to be ready..."
+              kubectl wait --for=condition=ready node --all --timeout=300s
+              
+              # Check node status
+              echo "Node status:"
+              kubectl get nodes
+              
+              # Check pod status
+              echo "Pod status:"
+              kubectl get pods -A
+              
+              # Force redeployment if needed
+              echo "Restarting deployment..."
+              kubectl rollout restart deployment tradevis-frontend
+              
+              # Wait for deployment to be ready
+              echo "Waiting for deployment to be ready..."
+              kubectl rollout status deployment/tradevis-frontend --timeout=300s
+              
+              # Show where pods are scheduled
+              echo "Pod scheduling:"
+              kubectl get pods -o wide
+              FIXSCRIPT
+              
+              chmod +x /home/ec2-user/fix-nodes.sh
+              chown ec2-user:ec2-user /home/ec2-user/fix-nodes.sh
+              
+              # Run the fix script
+              su - ec2-user -c "/home/ec2-user/fix-nodes.sh"
               EOF
 } 
