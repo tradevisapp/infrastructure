@@ -18,7 +18,12 @@ output "instance_id" {
   value       = aws_instance.app_server.id
 }
 
+output "instance_public_ip" {
+  description = "Public IP address of the EC2 instance"
+  value       = aws_instance.app_server.public_ip
+}
+
 output "ssh_command" {
   description = "SSH command to connect to the EC2 instance"
-  value       = "ssh -i ${var.key_name}.pem ec2-user@${aws_instance.app_server.public_ip}"
+  value       = var.key_name != null ? "ssh -i ${var.key_name}.pem ec2-user@${aws_instance.app_server.public_ip}" : "No SSH key provided. Instance can only be accessed through the AWS console or by creating a new key pair."
 } 

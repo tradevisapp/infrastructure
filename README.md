@@ -29,12 +29,13 @@ The repository includes a GitHub Actions workflow that automatically:
 
 - [Terraform](https://www.terraform.io/downloads.html) (v1.0.0+)
 - AWS CLI configured with appropriate credentials
-- SSH key pair for EC2 instance access
+- (Optional) SSH key pair for EC2 instance access
 
 ## Getting Started
 
 1. Clone this repository
 2. Update the `variables.tf` file with your preferred settings or create a `terraform.tfvars` file
+   - If you want SSH access to the instance, set the `key_name` variable to an existing key pair name in your AWS account
 3. Initialize Terraform:
    ```
    terraform init
@@ -60,11 +61,13 @@ The public IP address will be displayed in the Terraform output.
 
 ## Connecting to the EC2 Instance
 
-You can connect to the EC2 instance using SSH:
+If you provided an SSH key pair name, you can connect to the EC2 instance using SSH:
 
 ```
 ssh -i your-key-pair.pem ec2-user@<instance-public-ip>
 ```
+
+If you didn't provide a key pair name, you won't be able to SSH into the instance directly. You can still access the web application through the browser.
 
 ## Customizing the Application
 
@@ -85,9 +88,6 @@ To use the CI/CD pipeline, you need to set up the following GitHub secrets:
 - `AWS_ACCESS_KEY_ID` - AWS access key with permissions to create resources
 - `AWS_SECRET_ACCESS_KEY` - Corresponding AWS secret key
 - `TF_API_TOKEN` - (Optional) Terraform Cloud API token if using Terraform Cloud
-
-And the following GitHub variable:
-- `AWS_REGION` - AWS region to deploy resources (e.g., us-east-1)
 
 ## Cleaning Up
 
