@@ -16,9 +16,9 @@ This repository contains the infrastructure code for the TradeVis application, w
 
 - VPC with public subnet
 - Internet Gateway
-- Security Group (allowing SSH, HTTP, HTTPS)
-- EC2 instance with Docker and Docker Compose pre-installed
-- Automatically deploys a hello world web server (NGINX-based)
+- Security Group (allowing SSH, HTTP, HTTPS, and Kubernetes ports)
+- EC2 instance with Docker, Kind, and kubectl pre-installed
+- Automatically deploys a Kubernetes cluster using Kind with the tradevis-frontend image
 - S3 bucket for Terraform state storage
 - DynamoDB table for state locking
 
@@ -77,9 +77,9 @@ The S3 bucket and DynamoDB table are automatically created by the GitHub Actions
    terraform apply
    ```
 
-## Accessing the Hello World Application
+## Accessing the Application
 
-After the infrastructure is deployed, you can access the hello world application by navigating to the EC2 instance's public IP address in your web browser:
+After the infrastructure is deployed, you can access the application by navigating to the EC2 instance's public IP address in your web browser:
 
 ```
 http://<instance-public-ip>
@@ -87,7 +87,7 @@ http://<instance-public-ip>
 
 The public IP address will be displayed in the Terraform output.
 
-## Connecting to the EC2 Instance
+## Connecting to the EC2 Instance and Managing the Kubernetes Cluster
 
 If you provided an SSH key pair name, you can connect to the EC2 instance using SSH:
 
@@ -95,18 +95,33 @@ If you provided an SSH key pair name, you can connect to the EC2 instance using 
 ssh -i your-key-pair.pem ec2-user@<instance-public-ip>
 ```
 
+Once connected, you can manage the Kubernetes cluster using kubectl:
+
+```
+# View all pods
+kubectl get pods
+
+# View all services
+kubectl get services
+
+# View all deployments
+kubectl get deployments
+
+# View the cluster info
+kubectl cluster-info
+```
+
 If you didn't provide a key pair name, you won't be able to SSH into the instance directly. You can still access the web application through the browser.
 
-## Customizing the Application
+## Customizing the Kubernetes Deployment
 
-The EC2 instance is configured to automatically deploy a hello world container using Docker Compose. You can modify the Docker Compose configuration by editing the file at `/home/ec2-user/docker-compose.yml` on the EC2 instance.
+The EC2 instance is configured to automatically deploy the tradevis-frontend image in a Kind Kubernetes cluster. You can modify the Kubernetes deployment by editing the file at `/home/ec2-user/deployment.yaml` on the EC2 instance.
 
-To apply changes to the Docker Compose configuration:
+To apply changes to the Kubernetes deployment:
 
 ```
 cd /home/ec2-user
-docker-compose down
-docker-compose up -d
+kubectl apply -f deployment.yaml
 ```
 
 ## Required GitHub Secrets

@@ -106,6 +106,22 @@ resource "aws_security_group" "app_sg" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
+  ingress {
+    description = "Kubernetes API Server"
+    from_port   = 6443
+    to_port     = 6443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "Kubernetes NodePort Services"
+    from_port   = 30000
+    to_port     = 32767
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
   egress {
     from_port   = 0
     to_port     = 0
@@ -151,33 +167,101 @@ resource "aws_instance" "app_server" {
               chmod +x /usr/local/bin/docker-compose
               ln -s /usr/local/bin/docker-compose /usr/bin/docker-compose
               
+              # Install kubectl
+              curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+              chmod +x kubectl
+              mv kubectl /usr/local/bin/
+              
+              # Install Kind
+              curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
+              chmod +x ./kind
+              mv ./kind /usr/local/bin/kind
+              
               # Set DockerHub username
               DOCKERHUB_USERNAME="${var.dockerhub_username}"
               
-              # Create docker-compose.yml file
-              cat > /home/ec2-user/docker-compose.yml <<DOCKERCOMPOSE
-              version: '3.8'
+              # Create Kind cluster configuration
+              cat > /home/ec2-user/kind-config.yaml <<KINDCONFIG
+              kind: Cluster
+              apiVersion: kind.x-k8s.io/v1alpha4
+              nodes:
+              - role: control-plane
+                extraPortMappings:
+                - containerPort: 80
+                  hostPort: 80
+                  protocol: TCP
+              - role: worker
+              - role: worker
+              KINDCONFIG
               
-              services:
-                frontend:
-                  image: $DOCKERHUB_USERNAME/tradevis-frontend:latest
-                  container_name: tradevis-frontend
-                  restart: unless-stopped
-                  ports:
-                    - "80:80"
-                  networks:
-                    - app-network
+              # Create the Kind cluster
+              su - ec2-user -c "kind create cluster --config=/home/ec2-user/kind-config.yaml"
               
-              networks:
-                app-network:
-                  driver: bridge
-              DOCKERCOMPOSE
+              # Create Kubernetes deployment manifest
+              cat > /home/ec2-user/deployment.yaml <<DEPLOYMENT
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: tradevis-frontend
+              spec:
+                replicas: 2
+                selector:
+                  matchLabels:
+                    app: tradevis-frontend
+                template:
+                  metadata:
+                    labels:
+                      app: tradevis-frontend
+                  spec:
+                    containers:
+                    - name: tradevis-frontend
+                      image: $DOCKERHUB_USERNAME/tradevis-frontend:latest
+                      ports:
+                      - containerPort: 80
+              ---
+              apiVersion: v1
+              kind: Service
+              metadata:
+                name: tradevis-frontend
+              spec:
+                type: NodePort
+                ports:
+                - port: 80
+                  targetPort: 80
+                selector:
+                  app: tradevis-frontend
+              ---
+              apiVersion: networking.k8s.io/v1
+              kind: Ingress
+              metadata:
+                name: tradevis-frontend-ingress
+                annotations:
+                  nginx.ingress.kubernetes.io/rewrite-target: /
+              spec:
+                rules:
+                - http:
+                    paths:
+                    - path: /
+                      pathType: Prefix
+                      backend:
+                        service:
+                          name: tradevis-frontend
+                          port:
+                            number: 80
+              DEPLOYMENT
               
-              # Set proper ownership
-              chown ec2-user:ec2-user /home/ec2-user/docker-compose.yml
+              # Apply the Kubernetes manifests
+              su - ec2-user -c "kubectl apply -f /home/ec2-user/deployment.yaml"
               
-              # Start the container
-              cd /home/ec2-user
-              docker-compose up -d
+              # Pull the image into the Kind cluster
+              su - ec2-user -c "docker pull $DOCKERHUB_USERNAME/tradevis-frontend:latest"
+              su - ec2-user -c "kind load docker-image $DOCKERHUB_USERNAME/tradevis-frontend:latest"
+              
+              # Set proper ownership for all files
+              chown ec2-user:ec2-user /home/ec2-user/kind-config.yaml
+              chown ec2-user:ec2-user /home/ec2-user/deployment.yaml
+              
+              # Add kubectl to ec2-user's PATH
+              echo 'export PATH=$PATH:/usr/local/bin' >> /home/ec2-user/.bashrc
               EOF
 } 
