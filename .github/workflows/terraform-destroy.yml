@@ -29,15 +29,31 @@ jobs:
       with:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: ${{ vars.AWS_REGION }}
+        aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+
+    - name: Check if S3 bucket exists
+      id: check_s3
+      run: |
+        if aws s3api head-bucket --bucket tradevis-terraform-state 2>/dev/null; then
+          echo "s3_exists=true" >> $GITHUB_OUTPUT
+        else
+          echo "s3_exists=false" >> $GITHUB_OUTPUT
+        fi
 
     - name: Terraform Init
       id: init
       run: terraform init
+      if: steps.check_s3.outputs.s3_exists == 'true'
 
     - name: Terraform Destroy Plan
       id: destroy-plan
       run: terraform plan -destroy -no-color
+      if: steps.check_s3.outputs.s3_exists == 'true'
       
     - name: Terraform Destroy
-      run: terraform destroy -auto-approve 
+      run: terraform destroy -auto-approve
+      if: steps.check_s3.outputs.s3_exists == 'true'
+      
+    - name: Display Message if S3 Bucket Doesn't Exist
+      run: echo "S3 bucket for Terraform state doesn't exist. Nothing to destroy."
+      if: steps.check_s3.outputs.s3_exists == 'false' 
