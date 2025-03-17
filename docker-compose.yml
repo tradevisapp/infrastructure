@@ -9,6 +9,15 @@ services:
       - "80:80"
     networks:
       - app-network
+      
+  frontend:
+    image: ${DOCKERHUB_USERNAME}/tradevis-frontend:latest
+    container_name: tradevis-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    networks:
+      - app-network
 
 networks:
   app-network:

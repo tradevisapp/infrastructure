@@ -106,6 +106,22 @@ resource "aws_security_group" "app_sg" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
+  ingress {
+    description = "Frontend App"
+    from_port   = 3000
+    to_port     = 3000
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "Webhook Server"
+    from_port   = 9000
+    to_port     = 9000
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
   egress {
     from_port   = 0
     to_port     = 0
@@ -151,6 +167,97 @@ resource "aws_instance" "app_server" {
               chmod +x /usr/local/bin/docker-compose
               ln -s /usr/local/bin/docker-compose /usr/bin/docker-compose
               
+              # Install Node.js for webhook server
+              curl -sL https://rpm.nodesource.com/setup_16.x | bash -
+              yum install -y nodejs
+              
+              # Create webhook server file
+              cat > /home/ec2-user/webhook-server.js <<'WEBHOOKSERVER'
+              const http = require('http');
+              const { exec } = require('child_process');
+              
+              const PORT = 9000;
+              const SECRET = process.env.WEBHOOK_SECRET || 'your-webhook-secret';
+              
+              const server = http.createServer((req, res) => {
+                if (req.method === 'POST' && req.url === '/webhook') {
+                  let body = '';
+                  
+                  req.on('data', chunk => {
+                    body += chunk.toString();
+                  });
+                  
+                  req.on('end', () => {
+                    try {
+                      const payload = JSON.parse(body);
+                      
+                      // Verify it's from DockerHub
+                      if (payload.push_data && payload.repository) {
+                        console.log(`Received webhook for ${payload.repository.name}:${payload.push_data.tag}`);
+                        
+                        // Pull the latest image and restart the container
+                        exec('cd /home/ec2-user && docker-compose pull frontend && docker-compose up -d', 
+                          (error, stdout, stderr) => {
+                            if (error) {
+                              console.error(`Error: ${error.message}`);
+                              return;
+                            }
+                            if (stderr) {
+                              console.error(`stderr: ${stderr}`);
+                            }
+                            console.log(`stdout: ${stdout}`);
+                            console.log('Container updated successfully');
+                          }
+                        );
+                        
+                        res.statusCode = 200;
+                        res.end('Webhook received and processing');
+                      } else {
+                        res.statusCode = 400;
+                        res.end('Invalid webhook payload');
+                      }
+                    } catch (error) {
+                      console.error('Error processing webhook:', error);
+                      res.statusCode = 400;
+                      res.end('Error processing webhook');
+                    }
+                  });
+                } else {
+                  res.statusCode = 404;
+                  res.end('Not found');
+                }
+              });
+              
+              server.listen(PORT, () => {
+                console.log(`Webhook server running on port ${PORT}`);
+              });
+              WEBHOOKSERVER
+              
+              # Set proper ownership
+              chown ec2-user:ec2-user /home/ec2-user/webhook-server.js
+              
+              # Create systemd service file for webhook server
+              cat > /etc/systemd/system/webhook.service <<'WEBHOOKSERVICE'
+              [Unit]
+              Description=DockerHub Webhook Server
+              After=network.target
+              
+              [Service]
+              Environment=NODE_ENV=production
+              Environment=WEBHOOK_SECRET=${var.webhook_secret}
+              Type=simple
+              User=ec2-user
+              ExecStart=/usr/bin/node /home/ec2-user/webhook-server.js
+              Restart=on-failure
+              
+              [Install]
+              WantedBy=multi-user.target
+              WEBHOOKSERVICE
+              
+              # Enable and start webhook service
+              systemctl enable webhook.service
+              systemctl start webhook.service
+              
               # Create docker-compose.yml file
               cat > /home/ec2-user/docker-compose.yml <<'DOCKERCOMPOSE'
               version: '3.8'
@@ -164,6 +271,15 @@ resource "aws_instance" "app_server" {
                     - "80:80"
                   networks:
                     - app-network
+                
+                frontend:
+                  image: ${DOCKERHUB_USERNAME}/tradevis-frontend:latest
+                  container_name: tradevis-frontend
+                  restart: unless-stopped
+                  ports:
+                    - "3000:80"
+                  networks:
+                    - app-network
               
               networks:
                 app-network:
@@ -172,6 +288,10 @@ resource "aws_instance" "app_server" {
               
               # Set proper ownership
               chown ec2-user:ec2-user /home/ec2-user/docker-compose.yml
+              
+              # Set environment variables for docker-compose
+              echo "DOCKERHUB_USERNAME=${var.dockerhub_username}" > /home/ec2-user/.env
+              chown ec2-user:ec2-user /home/ec2-user/.env
               
               # Start the container
               cd /home/ec2-user
