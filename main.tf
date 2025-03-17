@@ -317,6 +317,58 @@ resource "aws_instance" "app_server" {
               echo 'export PATH=$PATH:/usr/local/bin' >> /home/ec2-user/.bashrc
               echo 'export KUBECONFIG=/home/ec2-user/.kube/config' >> /home/ec2-user/.bashrc
               
+              # Create a direct kubectl connection script
+              cat > /home/ec2-user/connect-kubectl.sh <<CONNECT
+              #!/bin/bash
+              
+              # Get the container ID of the control plane node
+              CONTROL_PLANE_ID=$(docker ps | grep control-plane | awk '{print $1}')
+              
+              if [ -z "$CONTROL_PLANE_ID" ]; then
+                echo "Error: Could not find the control-plane container"
+                exit 1
+              fi
+              
+              # Get the IP address of the control plane container
+              CONTROL_PLANE_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' $CONTROL_PLANE_ID)
+              
+              if [ -z "$CONTROL_PLANE_IP" ]; then
+                echo "Error: Could not get the IP address of the control-plane container"
+                exit 1
+              fi
+              
+              echo "Control plane container IP: $CONTROL_PLANE_IP"
+              
+              # Create a new kubeconfig file that uses the container's IP directly
+              mkdir -p $HOME/.kube
+              kind get kubeconfig > $HOME/.kube/config.original
+              
+              # Replace localhost with the container IP in the kubeconfig
+              sed "s/127.0.0.1/$CONTROL_PLANE_IP/g" $HOME/.kube/config.original > $HOME/.kube/config
+              
+              # Set permissions
+              chmod 600 $HOME/.kube/config
+              
+              # Export KUBECONFIG
+              export KUBECONFIG=$HOME/.kube/config
+              
+              # Test the connection
+              echo "Testing connection to Kubernetes API server..."
+              kubectl cluster-info
+              
+              if [ $? -eq 0 ]; then
+                echo "Connection successful!"
+                echo "Adding KUBECONFIG to .bashrc..."
+                echo "export KUBECONFIG=$HOME/.kube/config" > $HOME/.bashrc_kubectl
+                grep -q "source ~/.bashrc_kubectl" $HOME/.bashrc || echo "source ~/.bashrc_kubectl" >> $HOME/.bashrc
+              else
+                echo "Connection failed. Please check the cluster status."
+              fi
+              CONNECT
+              
+              chmod +x /home/ec2-user/connect-kubectl.sh
+              chown ec2-user:ec2-user /home/ec2-user/connect-kubectl.sh
+              
               # Create a welcome script
               cat > /home/ec2-user/welcome.sh <<WELCOME
               #!/bin/bash
@@ -326,22 +378,26 @@ resource "aws_instance" "app_server" {
               echo "Your Kind Kubernetes cluster should be running."
               echo ""
               echo "If you're experiencing connection issues with the Kubernetes API server,"
-              echo "try the following steps:"
+              echo "run the connection fix script first:"
               echo ""
-              echo "1. Ensure KUBECONFIG is set correctly:"
-              echo "   export KUBECONFIG=\$HOME/.kube/config"
+              echo "   ./connect-kubectl.sh"
               echo ""
-              echo "2. Verify the cluster is running:"
+              echo "Other helpful commands:"
+              echo ""
+              echo "1. Verify the cluster is running:"
               echo "   kind get clusters"
               echo ""
-              echo "3. Check if the API server is accessible:"
+              echo "2. Check if the API server is accessible:"
               echo "   kubectl cluster-info"
               echo ""
-              echo "4. If you're still having issues, run the troubleshooting script:"
+              echo "3. If you're still having issues, run the troubleshooting script:"
               echo "   ./troubleshoot.sh"
               echo ""
-              echo "5. To fix common node issues:"
+              echo "4. To fix common node issues:"
               echo "   ./fix-nodes.sh"
+              echo ""
+              echo "5. To completely restart the cluster:"
+              echo "   ./restart-cluster.sh"
               echo ""
               echo "6. To check the status of your application:"
               echo "   kubectl get pods"
@@ -501,11 +557,9 @@ resource "aws_instance" "app_server" {
               echo "Creating new Kind cluster..."
               kind create cluster --config=/home/ec2-user/kind-config.yaml
               
-              # Configure kubectl
-              echo "Configuring kubectl..."
-              mkdir -p \$HOME/.kube
-              kind get kubeconfig > \$HOME/.kube/config
-              export KUBECONFIG=\$HOME/.kube/config
+              # Run the connection script
+              echo "Setting up kubectl connection..."
+              ./connect-kubectl.sh
               
               # Wait for nodes to be ready
               echo "Waiting for nodes to be ready..."
@@ -597,5 +651,8 @@ resource "aws_instance" "app_server" {
               
               chmod +x /home/ec2-user/troubleshoot.sh
               chown ec2-user:ec2-user /home/ec2-user/troubleshoot.sh
+              
+              # Run the connection script for ec2-user
+              su - ec2-user -c "/home/ec2-user/connect-kubectl.sh"
               EOF
 } 
