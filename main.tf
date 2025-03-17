@@ -151,13 +151,16 @@ resource "aws_instance" "app_server" {
               chmod +x /usr/local/bin/docker-compose
               ln -s /usr/local/bin/docker-compose /usr/bin/docker-compose
               
+              # Set DockerHub username
+              DOCKERHUB_USERNAME="${var.dockerhub_username}"
+              
               # Create docker-compose.yml file
-              cat > /home/ec2-user/docker-compose.yml <<'DOCKERCOMPOSE'
+              cat > /home/ec2-user/docker-compose.yml <<DOCKERCOMPOSE
               version: '3.8'
               
               services:
                 frontend:
-                  image: \${DOCKERHUB_USERNAME}/tradevis-frontend:latest
+                  image: $DOCKERHUB_USERNAME/tradevis-frontend:latest
                   container_name: tradevis-frontend
                   restart: unless-stopped
                   ports:
@@ -173,16 +176,8 @@ resource "aws_instance" "app_server" {
               # Set proper ownership
               chown ec2-user:ec2-user /home/ec2-user/docker-compose.yml
               
-              # Create .env file with DockerHub credentials
-              cat > /home/ec2-user/.env <<ENVFILE
-              DOCKERHUB_USERNAME=${var.dockerhub_username}
-              ENVFILE
-              
-              # Set proper ownership
-              chown ec2-user:ec2-user /home/ec2-user/.env
-              
               # Start the container
               cd /home/ec2-user
-              docker-compose --env-file .env up -d
+              docker-compose up -d
               EOF
 } 
