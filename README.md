@@ -113,23 +113,30 @@ kubectl cluster-info
 
 ### Troubleshooting Kubernetes Cluster
 
-If you encounter any issues with the Kubernetes cluster, a helper script is provided to assist with common setup tasks:
+If you encounter any issues with the Kubernetes cluster, helper scripts are provided to assist with common tasks and troubleshooting:
 
 ```
-# Run the setup script
+# Run the basic setup script
 ./setup-kind.sh
+
+# For more comprehensive troubleshooting
+./troubleshoot.sh
 ```
 
-This script will:
-1. Check the cluster status
-2. Restart the deployment
-3. Wait for pods to be ready
-4. Display current pod status
+The troubleshooting script will:
+1. Check system resources
+2. Verify Docker status
+3. Check Kind cluster status
+4. Test Kubernetes connectivity
+5. Display node and pod status
+6. Test API server health
+7. Automatically rebuild the cluster if needed
 
 Common issues that might occur:
 - Node taints preventing pod scheduling
 - Resource constraints
 - Image pull failures
+- API server connectivity issues
 
 You can check for these issues with these commands:
 
@@ -142,6 +149,9 @@ kubectl get pods -A
 
 # Check pod details
 kubectl describe pod <pod-name>
+
+# Check API server health
+curl -k https://localhost:6443/healthz
 ```
 
 If you didn't provide a key pair name, you won't be able to SSH into the instance directly. You can still access the web application through the browser.

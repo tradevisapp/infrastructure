@@ -177,6 +177,10 @@ resource "aws_instance" "app_server" {
               chmod +x ./kind
               mv ./kind /usr/local/bin/kind
               
+              # Create local kubeconfig directory
+              mkdir -p /home/ec2-user/.kube
+              chown ec2-user:ec2-user /home/ec2-user/.kube
+              
               # Set DockerHub username
               DOCKERHUB_USERNAME="${var.dockerhub_username}"
               
@@ -184,6 +188,9 @@ resource "aws_instance" "app_server" {
               cat > /home/ec2-user/kind-config.yaml <<KINDCONFIG
               kind: Cluster
               apiVersion: kind.x-k8s.io/v1alpha4
+              networking:
+                apiServerAddress: "0.0.0.0"
+                apiServerPort: 6443
               nodes:
               - role: control-plane
                 kubeadmConfigPatches:
@@ -198,35 +205,58 @@ resource "aws_instance" "app_server" {
                 - containerPort: 80
                   hostPort: 80
                   protocol: TCP
-              - role: worker
-                kubeadmConfigPatches:
-                - |
-                  kind: JoinConfiguration
-                  nodeRegistration:
-                    kubeletExtraArgs:
-                      system-reserved: "memory=256Mi"
-                    taints: []
-              - role: worker
-                kubeadmConfigPatches:
-                - |
-                  kind: JoinConfiguration
-                  nodeRegistration:
-                    kubeletExtraArgs:
-                      system-reserved: "memory=256Mi"
-                    taints: []
+                - containerPort: 443
+                  hostPort: 443
+                  protocol: TCP
               KINDCONFIG
               
+              # Create a wrapper script to ensure proper environment
+              cat > /home/ec2-user/create-cluster.sh <<'CREATESCRIPT'
+              #!/bin/bash
+              
               # Create the Kind cluster with increased timeout
-              su - ec2-user -c "kind create cluster --config=/home/ec2-user/kind-config.yaml --wait 5m"
+              kind create cluster --config=/home/ec2-user/kind-config.yaml --wait 5m
+              
+              # Ensure kubeconfig is properly set
+              mkdir -p $HOME/.kube
+              kind get kubeconfig > $HOME/.kube/config
+              chmod 600 $HOME/.kube/config
+              
+              # Set KUBECONFIG environment variable
+              export KUBECONFIG=$HOME/.kube/config
+              
+              # Test connection
+              kubectl cluster-info
+              
+              # Verify API server is accessible
+              echo "Verifying API server connection..."
+              if ! kubectl get nodes > /dev/null 2>&1; then
+                echo "API server not accessible, restarting Docker..."
+                sudo systemctl restart docker
+                sleep 30
+                
+                echo "Recreating Kind cluster..."
+                kind delete cluster || true
+                kind create cluster --config=/home/ec2-user/kind-config.yaml --wait 5m
+                kind get kubeconfig > $HOME/.kube/config
+                chmod 600 $HOME/.kube/config
+              fi
+              CREATESCRIPT
+              
+              chmod +x /home/ec2-user/create-cluster.sh
+              chown ec2-user:ec2-user /home/ec2-user/create-cluster.sh
+              
+              # Run the cluster creation script
+              su - ec2-user -c "/home/ec2-user/create-cluster.sh"
               
               # Wait for the cluster to be fully ready
-              su - ec2-user -c "kubectl wait --for=condition=Ready nodes --all --timeout=5m"
+              su - ec2-user -c "KUBECONFIG=/home/ec2-user/.kube/config kubectl wait --for=condition=Ready nodes --all --timeout=5m || echo 'Not all nodes are ready but continuing'"
               
               # Install NGINX Ingress Controller
-              su - ec2-user -c "kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml"
+              su - ec2-user -c "KUBECONFIG=/home/ec2-user/.kube/config kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml"
               
               # Wait for ingress controller to be ready
-              su - ec2-user -c "kubectl wait --namespace ingress-nginx \
+              su - ec2-user -c "KUBECONFIG=/home/ec2-user/.kube/config kubectl wait --namespace ingress-nginx \
                 --for=condition=ready pod \
                 --selector=app.kubernetes.io/component=controller \
                 --timeout=90s || echo 'Ingress controller not ready but continuing'"
@@ -238,7 +268,7 @@ resource "aws_instance" "app_server" {
               metadata:
                 name: tradevis-frontend
               spec:
-                replicas: 2
+                replicas: 1
                 selector:
                   matchLabels:
                     app: tradevis-frontend
@@ -259,6 +289,18 @@ resource "aws_instance" "app_server" {
                           cpu: "500m"
                       ports:
                       - containerPort: 80
+                      readinessProbe:
+                        httpGet:
+                          path: /
+                          port: 80
+                        initialDelaySeconds: 10
+                        periodSeconds: 5
+                      livenessProbe:
+                        httpGet:
+                          path: /
+                          port: 80
+                        initialDelaySeconds: 15
+                        periodSeconds: 10
               ---
               apiVersion: v1
               kind: Service
@@ -292,18 +334,20 @@ resource "aws_instance" "app_server" {
               DEPLOYMENT
               
               # Apply the Kubernetes manifests
-              su - ec2-user -c "kubectl apply -f /home/ec2-user/deployment.yaml"
+              su - ec2-user -c "KUBECONFIG=/home/ec2-user/.kube/config kubectl apply -f /home/ec2-user/deployment.yaml"
               
               # Wait for the deployment to be ready
-              su - ec2-user -c "kubectl wait --for=condition=available --timeout=300s deployment/tradevis-frontend || echo 'Deployment not ready but continuing'"
+              su - ec2-user -c "KUBECONFIG=/home/ec2-user/.kube/config kubectl wait --for=condition=available --timeout=300s deployment/tradevis-frontend || echo 'Deployment not ready but continuing'"
               
               # Pull the image into the Kind cluster
               su - ec2-user -c "docker pull $DOCKERHUB_USERNAME/tradevis-frontend:latest"
               su - ec2-user -c "kind load docker-image $DOCKERHUB_USERNAME/tradevis-frontend:latest"
               
               # Create a setup script for the user to run if needed
-              cat > /home/ec2-user/setup-kind.sh <<SETUPSCRIPT
+              cat > /home/ec2-user/setup-kind.sh <<'SETUPSCRIPT'
               #!/bin/bash
+              
+              export KUBECONFIG=$HOME/.kube/config
               
               echo "Checking cluster status..."
               kubectl cluster-info
@@ -323,12 +367,69 @@ resource "aws_instance" "app_server" {
               
               chmod +x /home/ec2-user/setup-kind.sh
               
+              # Create a troubleshooting script
+              cat > /home/ec2-user/troubleshoot.sh <<'TROUBLESHOOT'
+              #!/bin/bash
+              
+              export KUBECONFIG=$HOME/.kube/config
+              
+              echo "============ System Resources ============"
+              free -h
+              df -h
+              
+              echo "============ Docker Status ============"
+              sudo systemctl status docker
+              docker info
+              
+              echo "============ Kind Cluster Status ============"
+              kind get clusters
+              
+              echo "============ Kubernetes Connectivity ============"
+              kubectl cluster-info
+              
+              echo "============ Kubernetes Node Status ============"
+              kubectl get nodes -o wide
+              
+              echo "============ Kubernetes Pod Status ============"
+              kubectl get pods -A
+              
+              echo "============ Checking API Server ============"
+              if ! curl -k https://localhost:6443/healthz; then
+                echo "API server is not responding, attempting to fix..."
+                
+                echo "Restarting Docker..."
+                sudo systemctl restart docker
+                sleep 30
+                
+                echo "Rebuilding Kind cluster..."
+                kind delete cluster || true
+                kind create cluster --config=/home/ec2-user/kind-config.yaml
+                
+                echo "Retrieving new kubeconfig..."
+                kind get kubeconfig > $HOME/.kube/config
+                chmod 600 $HOME/.kube/config
+                
+                echo "Reapplying deployments..."
+                kubectl apply -f /home/ec2-user/deployment.yaml
+                
+                echo "New cluster status:"
+                kubectl get pods -A
+              else
+                echo "API server is healthy"
+              fi
+              TROUBLESHOOT
+              
+              chmod +x /home/ec2-user/troubleshoot.sh
+              chown ec2-user:ec2-user /home/ec2-user/troubleshoot.sh
+              
               # Set proper ownership for all files
               chown ec2-user:ec2-user /home/ec2-user/kind-config.yaml
               chown ec2-user:ec2-user /home/ec2-user/deployment.yaml
               chown ec2-user:ec2-user /home/ec2-user/setup-kind.sh
+              chown ec2-user:ec2-user /home/ec2-user/troubleshoot.sh
               
-              # Add kubectl to ec2-user's PATH
+              # Add kubectl to ec2-user's PATH and set KUBECONFIG
               echo 'export PATH=$PATH:/usr/local/bin' >> /home/ec2-user/.bashrc
+              echo 'export KUBECONFIG=$HOME/.kube/config' >> /home/ec2-user/.bashrc
               EOF
 } 
