@@ -147,53 +147,48 @@ resource "aws_instance" "app_server" {
     volume_type = "gp2"
   }
 
+  user_data = <<-EOF
+    #!/bin/bash
+    # Install git
+    yum update -y
+    yum install git -y
+
+    # Install Docker
+    amazon-linux-extras install docker -y
+    systemctl start docker
+    systemctl enable docker
+    usermod -a -G docker ec2-user
+
+    # Install kubectl
+    curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+    chmod +x kubectl
+    mv kubectl /usr/local/bin/
+
+    # Install Kind
+    curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.14.0/kind-linux-amd64
+    chmod +x ./kind
+    mv ./kind /usr/local/bin/
+
+    # Clone repository
+    mkdir -p /home/ec2-user/app
+    cd /home/ec2-user/app
+    git clone https://github.com/tradevisapp/app.git .
+
+    # Setup and run Kind cluster
+    cd /home/ec2-user/app
+    if [ -f kind-config.yaml ]; then
+      kind create cluster --config kind-config.yaml
+    else
+      kind create cluster
+    fi
+
+    # Apply any Kubernetes configurations if they exist
+    if [ -d kubernetes ]; then
+      kubectl apply -f kubernetes/
+    fi
+  EOF
+
   tags = {
     Name = "${var.app_name}-server"
   }
-
-  user_data = <<-EOF
-              #!/bin/bash
-              # Update system packages
-              yum update -y
-              
-              # Install Docker
-              amazon-linux-extras install docker -y
-              service docker start
-              usermod -a -G docker ec2-user
-              chkconfig docker on
-              
-              # Install Docker Compose
-              curl -L "https://github.com/docker/compose/releases/download/v2.18.1/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-              chmod +x /usr/local/bin/docker-compose
-              ln -s /usr/local/bin/docker-compose /usr/bin/docker-compose
-              
-              # Install kubectl
-              curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-              chmod +x kubectl
-              mv kubectl /usr/local/bin/
-              
-              # Install Kind
-              curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
-              chmod +x ./kind
-              mv ./kind /usr/local/bin/kind
-              
-              # Set DockerHub username
-              DOCKERHUB_USERNAME="${var.dockerhub_username}"
-              
-              # Clone the app repository
-              git clone https://github.com/tradevisapp/app.git /home/ec2-user/app
-              
-              # Create the Kind cluster
-              su - ec2-user -c "kind create cluster --config=/home/ec2-user/app/kind-config.yaml"
-              
-              # Apply the Kubernetes manifests
-              su - ec2-user -c "kubectl apply -f /home/ec2-user/app/deployment.yaml"
-              
-              # Pull the image into the Kind cluster
-              su - ec2-user -c "docker pull $DOCKERHUB_USERNAME/tradevis-frontend:latest"
-              su - ec2-user -c "kind load docker-image $DOCKERHUB_USERNAME/tradevis-frontend:latest"
-              
-              # Add kubectl to ec2-user's PATH
-              echo 'export PATH=$PATH:/usr/local/bin' >> /home/ec2-user/.bashrc
-              EOF
 } 
