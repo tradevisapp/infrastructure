@@ -138,7 +138,7 @@ resource "aws_security_group" "app_sg" {
 # Create EC2 Instance
 resource "aws_instance" "app_server" {
   ami                    = data.aws_ami.ubuntu.id
-  instance_type          = var.instance_type
+  instance_type          = "t2.medium"
   key_name               = var.key_name != null ? var.key_name : null
   vpc_security_group_ids = [aws_security_group.app_sg.id]
   subnet_id              = aws_subnet.app_public_subnet.id
@@ -148,7 +148,24 @@ resource "aws_instance" "app_server" {
     volume_type = "gp2"
   }
 
-  user_data = file("${path.module}/user-data.sh")
+  user_data = <<-EOF
+    #!/bin/bash
+    set -e
+
+    # Install git
+    apt-get update
+    apt-get install -y git
+
+    # Clone the repository
+    git clone https://github.com/tradevisapp/app /home/ubuntu/app
+
+    # Make the script executable
+    chmod +x /home/ubuntu/app/run-app.sh
+
+    # Run the setup script
+    cd /home/ubuntu/app
+    ./run-app.sh
+  EOF
   
   tags = {
     Name = "${var.app_name}-server"
