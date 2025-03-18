@@ -186,16 +186,50 @@ resource "aws_instance" "app_server" {
               apiVersion: kind.x-k8s.io/v1alpha4
               nodes:
               - role: control-plane
+                kubeadmConfigPatches:
+                - |
+                  kind: InitConfiguration
+                  nodeRegistration:
+                    kubeletExtraArgs:
+                      node-labels: "ingress-ready=true"
+                      system-reserved: "memory=512Mi"
+                    taints: []
                 extraPortMappings:
                 - containerPort: 80
                   hostPort: 80
                   protocol: TCP
               - role: worker
+                kubeadmConfigPatches:
+                - |
+                  kind: JoinConfiguration
+                  nodeRegistration:
+                    kubeletExtraArgs:
+                      system-reserved: "memory=256Mi"
+                    taints: []
               - role: worker
+                kubeadmConfigPatches:
+                - |
+                  kind: JoinConfiguration
+                  nodeRegistration:
+                    kubeletExtraArgs:
+                      system-reserved: "memory=256Mi"
+                    taints: []
               KINDCONFIG
               
-              # Create the Kind cluster
-              su - ec2-user -c "kind create cluster --config=/home/ec2-user/kind-config.yaml"
+              # Create the Kind cluster with increased timeout
+              su - ec2-user -c "kind create cluster --config=/home/ec2-user/kind-config.yaml --wait 5m"
+              
+              # Wait for the cluster to be fully ready
+              su - ec2-user -c "kubectl wait --for=condition=Ready nodes --all --timeout=5m"
+              
+              # Install NGINX Ingress Controller
+              su - ec2-user -c "kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml"
+              
+              # Wait for ingress controller to be ready
+              su - ec2-user -c "kubectl wait --namespace ingress-nginx \
+                --for=condition=ready pod \
+                --selector=app.kubernetes.io/component=controller \
+                --timeout=90s || echo 'Ingress controller not ready but continuing'"
               
               # Create Kubernetes deployment manifest
               cat > /home/ec2-user/deployment.yaml <<DEPLOYMENT
@@ -216,6 +250,13 @@ resource "aws_instance" "app_server" {
                     containers:
                     - name: tradevis-frontend
                       image: $DOCKERHUB_USERNAME/tradevis-frontend:latest
+                      resources:
+                        requests:
+                          memory: "128Mi"
+                          cpu: "100m"
+                        limits:
+                          memory: "256Mi"
+                          cpu: "500m"
                       ports:
                       - containerPort: 80
               ---
@@ -253,13 +294,39 @@ resource "aws_instance" "app_server" {
               # Apply the Kubernetes manifests
               su - ec2-user -c "kubectl apply -f /home/ec2-user/deployment.yaml"
               
+              # Wait for the deployment to be ready
+              su - ec2-user -c "kubectl wait --for=condition=available --timeout=300s deployment/tradevis-frontend || echo 'Deployment not ready but continuing'"
+              
               # Pull the image into the Kind cluster
               su - ec2-user -c "docker pull $DOCKERHUB_USERNAME/tradevis-frontend:latest"
               su - ec2-user -c "kind load docker-image $DOCKERHUB_USERNAME/tradevis-frontend:latest"
               
+              # Create a setup script for the user to run if needed
+              cat > /home/ec2-user/setup-kind.sh <<SETUPSCRIPT
+              #!/bin/bash
+              
+              echo "Checking cluster status..."
+              kubectl cluster-info
+              kubectl get nodes
+              
+              echo "Restarting deployment if needed..."
+              kubectl rollout restart deployment/tradevis-frontend
+              
+              echo "Waiting for pods to be ready..."
+              kubectl wait --for=condition=Ready pods --all --timeout=3m || echo "Not all pods are ready"
+              
+              echo "Current pod status:"
+              kubectl get pods -A
+              
+              echo "You can access the application at http://localhost"
+              SETUPSCRIPT
+              
+              chmod +x /home/ec2-user/setup-kind.sh
+              
               # Set proper ownership for all files
               chown ec2-user:ec2-user /home/ec2-user/kind-config.yaml
               chown ec2-user:ec2-user /home/ec2-user/deployment.yaml
+              chown ec2-user:ec2-user /home/ec2-user/setup-kind.sh
               
               # Add kubectl to ec2-user's PATH
               echo 'export PATH=$PATH:/usr/local/bin' >> /home/ec2-user/.bashrc

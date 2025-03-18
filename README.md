@@ -111,6 +111,39 @@ kubectl get deployments
 kubectl cluster-info
 ```
 
+### Troubleshooting Kubernetes Cluster
+
+If you encounter any issues with the Kubernetes cluster, a helper script is provided to assist with common setup tasks:
+
+```
+# Run the setup script
+./setup-kind.sh
+```
+
+This script will:
+1. Check the cluster status
+2. Restart the deployment
+3. Wait for pods to be ready
+4. Display current pod status
+
+Common issues that might occur:
+- Node taints preventing pod scheduling
+- Resource constraints
+- Image pull failures
+
+You can check for these issues with these commands:
+
+```
+# Check node status and taints
+kubectl describe nodes
+
+# Check pod status
+kubectl get pods -A
+
+# Check pod details
+kubectl describe pod <pod-name>
+```
+
 If you didn't provide a key pair name, you won't be able to SSH into the instance directly. You can still access the web application through the browser.
 
 ## Customizing the Kubernetes Deployment
