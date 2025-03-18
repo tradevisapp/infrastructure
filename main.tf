@@ -153,11 +153,18 @@ resource "aws_instance" "app_server" {
     yum update -y
     yum install git -y
 
-    # Install Docker
+    # Install Docker properly with correct permissions
     amazon-linux-extras install docker -y
     systemctl start docker
     systemctl enable docker
     usermod -a -G docker ec2-user
+    # Ensure Docker service has proper permissions and is fully initialized
+    systemctl restart docker
+    sleep 10
+
+    # Add ec2-user to sudoers for docker commands
+    echo "ec2-user ALL=(ALL) NOPASSWD: /usr/bin/docker" >> /etc/sudoers.d/docker-privileges
+    chmod 440 /etc/sudoers.d/docker-privileges
 
     # Install kubectl
     curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
@@ -174,13 +181,27 @@ resource "aws_instance" "app_server" {
     cd /home/ec2-user/app
     git clone https://github.com/tradevisapp/app.git .
 
-    # Setup and run Kind cluster
+    # Create a minimal Kind config file with explicit node settings
+    cat > kind-config.yaml <<EOL
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+- role: control-plane
+- role: worker
+EOL
+
+    # Setup and run Kind cluster with increased verbosity and as root to avoid permission issues
     cd /home/ec2-user/app
-    if [ -f kind-config.yaml ]; then
-      kind create cluster --config kind-config.yaml
-    else
-      kind create cluster
-    fi
+    # Run as root to avoid permission issues
+    kind delete cluster || true  # Delete any existing cluster
+    KIND_EXPERIMENTAL_PROVIDER=podman kind create cluster --config kind-config.yaml --verbosity 4 || KIND_EXPERIMENTAL_PROVIDER= kind create cluster --config kind-config.yaml --verbosity 4
+
+    # Wait for cluster to be ready
+    sleep 30
+    
+    # Fix known Kind networking issues
+    sysctl -w net.ipv4.ip_forward=1
+    iptables -A FORWARD -i eth0 -j ACCEPT
 
     # Apply any Kubernetes configurations if they exist
     if [ -d kubernetes ]; then
