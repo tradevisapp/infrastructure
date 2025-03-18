@@ -147,67 +147,7 @@ resource "aws_instance" "app_server" {
     volume_type = "gp2"
   }
 
-  user_data = <<-EOF
-    #!/bin/bash
-    # Install git
-    yum update -y
-    yum install git -y
-
-    # Install Docker properly with correct permissions
-    amazon-linux-extras install docker -y
-    systemctl start docker
-    systemctl enable docker
-    usermod -a -G docker ec2-user
-    # Ensure Docker service has proper permissions and is fully initialized
-    systemctl restart docker
-    sleep 10
-
-    # Add ec2-user to sudoers for docker commands
-    echo "ec2-user ALL=(ALL) NOPASSWD: /usr/bin/docker" >> /etc/sudoers.d/docker-privileges
-    chmod 440 /etc/sudoers.d/docker-privileges
-
-    # Install kubectl
-    curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-    chmod +x kubectl
-    mv kubectl /usr/local/bin/
-
-    # Install Kind
-    curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.14.0/kind-linux-amd64
-    chmod +x ./kind
-    mv ./kind /usr/local/bin/
-
-    # Clone repository
-    mkdir -p /home/ec2-user/app
-    cd /home/ec2-user/app
-    git clone https://github.com/tradevisapp/app.git .
-
-    # Create a minimal Kind config file with explicit node settings
-    cat > kind-config.yaml <<EOL
-kind: Cluster
-apiVersion: kind.x-k8s.io/v1alpha4
-nodes:
-- role: control-plane
-- role: worker
-EOL
-
-    # Setup and run Kind cluster with increased verbosity and as root to avoid permission issues
-    cd /home/ec2-user/app
-    # Run as root to avoid permission issues
-    kind delete cluster || true  # Delete any existing cluster
-    KIND_EXPERIMENTAL_PROVIDER=podman kind create cluster --config kind-config.yaml --verbosity 4 || KIND_EXPERIMENTAL_PROVIDER= kind create cluster --config kind-config.yaml --verbosity 4
-
-    # Wait for cluster to be ready
-    sleep 30
-    
-    # Fix known Kind networking issues
-    sysctl -w net.ipv4.ip_forward=1
-    iptables -A FORWARD -i eth0 -j ACCEPT
-
-    # Apply any Kubernetes configurations if they exist
-    if [ -d kubernetes ]; then
-      kubectl apply -f kubernetes/
-    fi
-  EOF
+  user_data = file("user-data.sh")
 
   tags = {
     Name = "${var.app_name}-server"
