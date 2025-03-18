@@ -134,6 +134,7 @@ resource "aws_security_group" "app_sg" {
   }
 }
 
+
 # Create EC2 Instance
 resource "aws_instance" "app_server" {
   ami                    = data.aws_ami.ubuntu.id
