@@ -147,8 +147,8 @@ resource "aws_instance" "app_server" {
     volume_type = "gp2"
   }
 
-  user_data = file("user-data.sh")
-
+  user_data = file("${path.module}/user-data.sh")
+  
   tags = {
     Name = "${var.app_name}-server"
   }
