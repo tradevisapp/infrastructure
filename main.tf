@@ -156,6 +156,7 @@ resource "aws_instance" "app_server" {
               # Update system packages
               yum update -y
               
+              
               # Install Docker
               amazon-linux-extras install docker -y
               service docker start
