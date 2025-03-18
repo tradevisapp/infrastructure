@@ -143,6 +143,7 @@ resource "aws_instance" "app_server" {
   vpc_security_group_ids = [aws_security_group.app_sg.id]
   subnet_id              = aws_subnet.app_public_subnet.id
 
+
   root_block_device {
     volume_size = 30
     volume_type = "gp2"
