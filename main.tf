@@ -12,14 +12,14 @@ terraform {
   }
 }
 
-# Get latest Amazon Linux 2 AMI
-data "aws_ami" "amazon_linux_2" {
+# Get latest Ubuntu AMI
+data "aws_ami" "ubuntu" {
   most_recent = true
-  owners      = ["amazon"]
+  owners      = ["099720109477"] # Canonical
 
   filter {
     name   = "name"
-    values = ["amzn2-ami-hvm-*-x86_64-gp2"]
+    values = ["ubuntu/images/hvm-ssd/ubuntu-*-*-amd64-server-*", "ubuntu/images/hvm-ssd/ubuntu-*-*-arm64-server-*"]
   }
 
   filter {
@@ -136,7 +136,7 @@ resource "aws_security_group" "app_sg" {
 
 # Create EC2 Instance
 resource "aws_instance" "app_server" {
-  ami                    = data.aws_ami.amazon_linux_2.id
+  ami                    = data.aws_ami.ubuntu.id
   instance_type          = var.instance_type
   key_name               = var.key_name != null ? var.key_name : null
   vpc_security_group_ids = [aws_security_group.app_sg.id]
