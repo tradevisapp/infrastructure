@@ -141,7 +141,6 @@ resource "aws_security_group" "app_sg" {
   }
 }
 
-
 # Create EC2 Instance
 resource "aws_instance" "app_server" {
   ami                    = data.aws_ami.ubuntu.id
@@ -168,11 +167,11 @@ resource "aws_instance" "app_server" {
     git clone https://github.com/tradevisapp/app /home/ubuntu/app
 
     # Make the script executable
-    chmod +x /home/ubuntu/app/run-app.sh
+    sudo chmod +x /home/ubuntu/app/run-app.sh
 
     # Run the setup script
     cd /home/ubuntu/app
-    ./run-app.sh
+    sudo ./run-app.sh
   EOF
   
   tags = {
