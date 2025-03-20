@@ -184,4 +184,29 @@ resource "aws_instance" "app_server" {
   tags = {
     Name = "${var.app_name}-server"
   }
+}
+
+# Route53 DNS Configuration
+# Get the hosted zone for tradevis.click
+data "aws_route53_zone" "tradevisdemo" {
+  name = "tradevis.click"
+  private_zone = false
+}
+
+# Create an A record to point to the EC2 instance
+resource "aws_route53_record" "app_a_record" {
+  zone_id = data.aws_route53_zone.tradevisdemo.zone_id
+  name    = "tradevis.click"
+  type    = "A"
+  ttl     = "300"
+  records = [aws_instance.app_server.public_ip]
+}
+
+# Create www subdomain A record
+resource "aws_route53_record" "www_a_record" {
+  zone_id = data.aws_route53_zone.tradevisdemo.zone_id
+  name    = "www.tradevis.click"
+  type    = "A"
+  ttl     = "300"
+  records = [aws_instance.app_server.public_ip]
 } 

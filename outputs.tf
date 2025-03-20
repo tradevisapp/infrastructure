@@ -26,4 +26,14 @@ output "instance_public_ip" {
 output "ssh_command" {
   description = "SSH command to connect to the EC2 instance"
   value       = var.key_name != null ? "ssh -i ${var.key_name}.pem ec2-user@${aws_instance.app_server.public_ip}" : "No SSH key provided. Instance can only be accessed through the AWS console or by creating a new key pair."
+}
+
+output "domain_name" {
+  description = "Domain name pointing to the EC2 instance"
+  value       = "tradevis.click"
+}
+
+output "www_domain_name" {
+  description = "WWW domain name pointing to the EC2 instance"
+  value       = "www.tradevis.click"
 } 
