@@ -76,7 +76,6 @@ resource "aws_route_table_association" "app_public_rt_assoc" {
   subnet_id      = aws_subnet.app_public_subnet.id
   route_table_id = aws_route_table.app_public_rt.id
 }
-
 # Create Security Group
 resource "aws_security_group" "app_sg" {
   name        = "${var.app_name}-sg"
