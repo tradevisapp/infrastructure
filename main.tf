@@ -182,11 +182,11 @@ resource "aws_instance" "app_server" {
     git clone https://github.com/tradevisapp/app /home/ubuntu/app
 
     # Make the script executable
-    sudo chmod +x /home/ubuntu/app/run-app.sh
+    sudo chmod +x /home/ubuntu/app/setup.sh
 
     # Run the setup script
     cd /home/ubuntu/app
-    sudo ./run-app.sh
+    sudo ./setup.sh
   EOF
   
   tags = {
