@@ -189,7 +189,6 @@ resource "aws_instance" "app_server" {
     sudo ./setup.sh
   EOF
 
-  
   tags = {
     Name = "${var.app_name}-server"
   }
