@@ -168,7 +168,6 @@ resource "aws_instance" "app_server" {
     volume_size = 30
     volume_type = "gp2"
   }
-
   user_data = <<-EOF
     #!/bin/bash
     set -e
