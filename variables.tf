@@ -39,4 +39,22 @@ variable "dockerhub_username" {
   description = "DockerHub username for pulling the frontend image"
   type        = string
   default     = "roeilevinson"  # Default value, can be overridden
+}
+
+variable "auth0_domain" {
+  description = "Auth0 domain for authentication"
+  type        = string
+  sensitive   = true
+}
+
+variable "auth0_audience" {
+  description = "Auth0 API audience"
+  type        = string
+  sensitive   = true
+}
+
+variable "auth0_client_secret" {
+  description = "Auth0 client secret"
+  type        = string
+  sensitive   = true
 } 

@@ -56,6 +56,14 @@ jobs:
     - name: Terraform Plan
       id: plan
       run: terraform plan -no-color
+      env:
+        TF_VAR_auth0_domain: ${{ secrets.AUTH0_DOMAIN }}
+        TF_VAR_auth0_audience: ${{ secrets.AUTH0_AUDIENCE }}
+        TF_VAR_auth0_client_secret: ${{ secrets.AUTH0_CLIENT_SECRET }}
 
     - name: Terraform Apply
-      run: terraform apply -auto-approve 
+      run: terraform apply -auto-approve
+      env:
+        TF_VAR_auth0_domain: ${{ secrets.AUTH0_DOMAIN }}
+        TF_VAR_auth0_audience: ${{ secrets.AUTH0_AUDIENCE }}
+        TF_VAR_auth0_client_secret: ${{ secrets.AUTH0_CLIENT_SECRET }} 
