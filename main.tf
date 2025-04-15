@@ -184,7 +184,7 @@ resource "aws_instance" "app_server" {
 
     # Run the setup script
     cd /home/ubuntu/app
-    sudo ./setup.sh
+    # sudo ./setup.sh
   EOF
 
   tags = {
