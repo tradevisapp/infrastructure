@@ -192,6 +192,7 @@ resource "aws_instance" "app_server" {
   }
 }
 
+
 # Route53 DNS Configuration
 # Get the hosted zone for tradevis.click
 data "aws_route53_zone" "tradevisdemo" {
