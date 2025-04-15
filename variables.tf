@@ -45,16 +45,19 @@ variable "auth0_domain" {
   description = "Auth0 domain for authentication"
   type        = string
   sensitive   = true
+  default     = ""  # Makes it optional during destroy
 }
 
 variable "auth0_audience" {
   description = "Auth0 API audience"
   type        = string
   sensitive   = true
+  default     = ""  # Makes it optional during destroy
 }
 
 variable "auth0_client_secret" {
   description = "Auth0 client secret"
   type        = string
   sensitive   = true
+  default     = ""  # Makes it optional during destroy
 } 
