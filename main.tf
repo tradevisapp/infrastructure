@@ -176,6 +176,16 @@ resource "aws_instance" "app_server" {
     apt-get update
     apt-get install -y git
 
+    # Set up Auth0 environment variables
+    echo "export AUTH0_DOMAIN=${var.auth0_domain}" >> /etc/environment
+    echo "export AUTH0_AUDIENCE=${var.auth0_audience}" >> /etc/environment
+    echo "export AUTH0_CLIENT_SECRET=${var.auth0_client_secret}" >> /etc/environment
+    
+    # Also add them to the current session
+    export AUTH0_DOMAIN=${var.auth0_domain}
+    export AUTH0_AUDIENCE=${var.auth0_audience}
+    export AUTH0_CLIENT_SECRET=${var.auth0_client_secret}
+
     # Clone the repository
     git clone https://github.com/tradevisapp/app /home/ubuntu/app
 
